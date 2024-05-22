@@ -31,7 +31,8 @@ using namespace mlir::mhlo;
 namespace {
 void addGenericHloFusionPatterns(OpPassManager &pm, const std::string &entry,
                                  bool outlineSingleElemwiseOp,
-                                 bool outlineCatOp, bool aggressiveCatFusion) {
+                                 bool disableFusion, bool outlineCatOp,
+                                 bool aggressiveCatFusion) {
   // cluster constraint
   // pm.addNestedPass<func::FuncOp>(createClusterConstraintPass());
   // pm.addPass(createFusionOutliningPass());
@@ -57,27 +58,28 @@ void addGenericHloFusionPatterns(OpPassManager &pm, const std::string &entry,
   // pass, since it will cluster every elemenwise op which is not fused yet into
   // the mhlo.fusion and outline it as an independent function later
   pm.addNestedPass<func::FuncOp>(
-      createElementFusionPass(outlineSingleElemwiseOp));
+      createElementFusionPass(outlineSingleElemwiseOp, disableFusion));
   pm.addPass(createFusionOutliningPass());
   pm.addPass(createCSEPass());
 }
 
-void addCPUHloFusionPatterns(OpPassManager &pm, const std::string &entry) {
+void addCPUHloFusionPatterns(OpPassManager &pm, const std::string &entry,
+                             bool disableFusion) {
   // expand tuple
   pm.addPass(createExpandHloTuplesPass(entry));
   pm.addPass(createCSEPass());
   pm.addNestedPass<func::FuncOp>(createFlattenTuplePass());
 
   // perform aggressive fusion
-  pm.addNestedPass<func::FuncOp>(createHloAggressiveFusionPass());
+  pm.addNestedPass<func::FuncOp>(createHloAggressiveFusionPass(disableFusion));
   pm.addPass(createFusionOutliningPass());
   pm.addPass(createCSEPass());
 }
 
 void createHloOptPipelineImpl(OpPassManager &pm, const std::string &entryFunc,
                               const std::string &target,
-                              bool outlineSingleElemwiseOp, bool outlineCatOp,
-                              bool aggressiveCatFusion) {
+                              bool outlineSingleElemwiseOp, bool disableFusion,
+                              bool outlineCatOp, bool aggressiveCatFusion) {
   pm.addPass(createInlinerPass());
   pm.addPass(createCanonicalizerPass());
 
@@ -98,10 +100,11 @@ void createHloOptPipelineImpl(OpPassManager &pm, const std::string &entryFunc,
 
   // add fusion patterns
   if (target == "CPU") {
-    addCPUHloFusionPatterns(pm, entryFunc);
+    addCPUHloFusionPatterns(pm, entryFunc, disableFusion);
   } else {
     addGenericHloFusionPatterns(pm, entryFunc, outlineSingleElemwiseOp,
-                                outlineCatOp, aggressiveCatFusion);
+                                disableFusion, outlineCatOp,
+                                aggressiveCatFusion);
   }
 
   // note don't apply sccp
@@ -116,6 +119,6 @@ void mlir::createHloOptPipeline(OpPassManager &pm,
                                 const HloOptPipelineOptions &options) {
   invokeOpPassPipelineBuilder(createHloOptPipelineImpl, pm, options.entryFunc,
                               options.target, options.outlineSingleElemwiseOp,
-                              options.outlineCatOp,
+                              options.disableFusion, options.outlineCatOp,
                               options.aggressiveCatFusion);
 }

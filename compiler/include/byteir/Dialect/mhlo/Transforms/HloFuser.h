@@ -90,7 +90,8 @@ std::unique_ptr<OperationPass<func::FuncOp>>
 createCatFusionPass(bool aggressiveMode = false);
 
 std::unique_ptr<OperationPass<func::FuncOp>>
-createElementFusionPass(bool clusterSingleElemwiseOp = false);
+createElementFusionPass(bool clusterSingleElemwiseOp = false,
+                        bool disableElementwiseFuse = false);
 
 std::unique_ptr<OperationPass<func::FuncOp>> createMatmulEpilogueFusionPass();
 
@@ -99,7 +100,8 @@ std::unique_ptr<OperationPass<func::FuncOp>> createIOConvertFusionPass();
 // TODO add more target or list of op in arg
 std::unique_ptr<OperationPass<func::FuncOp>> createTrivialFusionPass();
 
-std::unique_ptr<OperationPass<func::FuncOp>> createHloAggressiveFusionPass();
+std::unique_ptr<OperationPass<func::FuncOp>>
+createHloAggressiveFusionPass(bool disableFusion = false);
 
 std::unique_ptr<OperationPass<func::FuncOp>> createReductionFusionPass();
 
