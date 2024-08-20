@@ -34,6 +34,8 @@ using namespace brt::cpu;
 using namespace std;
 
 static std::string test_file_add = "test/test_files/LLJIT/add.ll";
+static std::string test_file_scatter =
+    "test/test_files/LLJIT/scatter.brt_head.ll.bc";
 static std::string test_file_typecvt = "test/test_files/LLJIT/typecvt.ll";
 static std::string test_file_tanh = "test/test_files/LLJIT/tanh.ll";
 static std::string test_file_transpose_32_64_64 =
@@ -66,6 +68,30 @@ TypecvtKernelF32ToF16(const void *src_, void *dst_, const size_t N) {
   }
 }
 } // namespace
+
+// Test parsing bitcode file with brt head.
+TEST(LLVMJITTest, Scatter) {
+  auto llvmjit = LLVMJIT::Create();
+  ASSERT_TRUE(llvmjit->LoadFromFile(test_file_scatter).IsOK());
+
+  std::vector<int64_t> input_shape{6, 8};
+  std::vector<int64_t> src_shape{6, 1};
+  std::vector<float> input_buf(48, 0);
+  std::vector<float> src_buf(6, 1);
+  MLIREngineMemRefDescriptor input(input_buf.data(), input_shape),
+      src(src_buf.data(), src_shape);
+
+  {
+    void *fn;
+    ASSERT_TRUE(llvmjit->Lookup("_mlir_ciface_memref_copy_kernel", &fn).IsOK());
+    (*reinterpret_cast<void (*)(void *, void *)>(fn))(src.GetMemrefPtr(),
+                                                      input.GetMemrefPtr());
+
+    for (int i = 0; i < 6; ++i) {
+      ASSERT_TRUE(input_buf[i * 8] == 1);
+    }
+  }
+}
 
 TEST(LLVMJITTest, ADD) {
   auto llvmjit = LLVMJIT::Create();

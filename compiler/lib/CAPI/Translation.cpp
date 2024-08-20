@@ -36,6 +36,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <cstdlib>
 #include <string>
@@ -76,6 +77,20 @@ bool byteirTranslateToLLVMBC(MlirModule module, MlirStringRef outputFile) {
     llvm::errs() << "failed to create output file: " << unwrap(outputFile);
     return false;
   }
+
+  // Insert head before WriteBitCodeToFile.
+  SmallVector<char, 0> head(12);
+  auto writeInt32ToBuffer = [](uint32_t value, SmallVectorImpl<char> &buffer,
+                               unsigned &position) {
+    llvm::support::endian::write32le(&buffer[position], value);
+    position += 4;
+  };
+  unsigned position = 0;
+  writeInt32ToBuffer(MAGIC_NUMBER, head, position);
+  writeInt32ToBuffer(MAJOR_VERSION, head, position);
+  writeInt32ToBuffer(MINOR_VERSION, head, position);
+  fout.write((char *)&head.front(), head.size());
+
   llvm::WriteBitcodeToFile(*llvmModule, fout);
   return true;
 }

@@ -18,6 +18,7 @@
 #include "brt/backends/cpu/device/llvm/jit.h"
 #include "brt/core/common/common.h"
 #include "brt/core/ir/engine_util.h"
+#include "byteir-c/Translation.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
@@ -32,6 +33,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 
@@ -404,10 +406,87 @@ common::Status LLVMJITImpl::LoadTSM(llvm::orc::ThreadSafeModule &&tsm) {
   return LLVMErrorToBRTStatus(std::move(err), "Load TSM failed");
 }
 
+bool cleanBrtFile(llvm::MemoryBufferRef brtFile,
+                  const std::string tmpFilePath) {
+  std::error_code ec;
+  llvm::raw_fd_ostream fout(tmpFilePath, ec);
+  if (ec) {
+    llvm::errs() << "failed to create temporary bitcode file: " << tmpFilePath;
+    return false;
+  }
+
+  fout.write(brtFile.getBufferStart() + TOTAL_HEAD_BYTES,
+             brtFile.getBufferSize() - TOTAL_HEAD_BYTES);
+  return true;
+}
+
+common::Status processBrtFile(const std::string &path,
+                              std::string &newFilePath) {
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> FileOrErr =
+      llvm::MemoryBuffer::getFileOrSTDIN(path);
+  if (std::error_code EC = FileOrErr.getError()) {
+    return common::Status(common::StatusCategory::BRT, common::StatusCode::FAIL,
+                          "Failed to open the input file: " + path);
+  }
+  llvm::MemoryBufferRef brtFile = FileOrErr.get()->getMemBufferRef();
+  const char *bufferData = brtFile.getBufferStart();
+
+  // Check magic number.
+  auto brtMagicNumber = MAGIC_NUMBER;
+  int hasBrtMagicNumber =
+      std::memcmp(bufferData, &brtMagicNumber, MAGIC_NUMBER_BYTES);
+  if (hasBrtMagicNumber) {
+    newFilePath = path;
+    return common::Status::OK();
+  }
+
+  printf("Find magic number.\n");
+  // Check major number.
+  std::string tmpFilePath = path + ".tmp";
+  int64_t majorVersionData = 0;
+  std::memcpy(&majorVersionData, bufferData + MAGIC_NUMBER_BYTES,
+              MAJOR_VERSION_BYTES);
+  if (majorVersionData < MAJOR_VERSION) {
+    printf("Find valid major version number.\n");
+    if (cleanBrtFile(brtFile, tmpFilePath)) {
+      newFilePath = tmpFilePath;
+    }
+    return common::Status::OK();
+  } else if (majorVersionData > MAJOR_VERSION) {
+    return common::Status(common::StatusCategory::BRT, common::StatusCode::FAIL,
+                          "The major version is larger than current llvm "
+                          "version. Stop to load it...");
+  }
+
+  // Compare minor version number.
+  int64_t minorVersionData = 0;
+  std::memcpy(&minorVersionData,
+              bufferData + MAGIC_NUMBER_BYTES + MAJOR_VERSION_BYTES,
+              MINOR_VERSION_BYTES);
+  if (minorVersionData <= MINOR_VERSION) {
+    printf("Find valid major version number.\n");
+    if (cleanBrtFile(brtFile, tmpFilePath)) {
+      newFilePath = tmpFilePath;
+    }
+    return common::Status::OK();
+  }
+
+  return common::Status(common::StatusCategory::BRT, common::StatusCode::FAIL,
+                        "The minor version is larger than current llvm "
+                        "version. Stop to load it...");
+}
+
 common::Status LLVMJITImpl::ParseIRFile(const std::string &path) {
   auto ctx = std::make_unique<llvm::LLVMContext>();
   llvm::SMDiagnostic err;
-  auto mod = llvm::parseIRFile(path, err, *ctx);
+
+  std::string newFilePath;
+  auto status = processBrtFile(path, newFilePath);
+  if (!status.IsOK()) {
+    return status;
+  }
+
+  auto mod = llvm::parseIRFile(newFilePath, err, *ctx);
   if (!mod) {
     std::string buf;
     llvm::raw_string_ostream OS(buf);
@@ -415,7 +494,7 @@ common::Status LLVMJITImpl::ParseIRFile(const std::string &path) {
     return common::Status(common::StatusCategory::BRT, common::StatusCode::FAIL,
                           "Parse LLVM module failed : " + buf);
   }
-  mod->setModuleIdentifier(path);
+  mod->setModuleIdentifier(newFilePath);
 
   return LoadTSM({std::move(mod), std::move(ctx)});
 }

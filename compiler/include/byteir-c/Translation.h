@@ -21,6 +21,16 @@
 #include "mlir-c/IR.h"
 #include "mlir-c/Support.h"
 
+enum ByteIRHead {
+  TOTAL_HEAD_BYTES = 12,
+  MAGIC_NUMBER = 0x30dc4790,
+  MAGIC_NUMBER_BYTES = 4,
+  MAJOR_VERSION = 1,
+  MAJOR_VERSION_BYTES = 4,
+  MINOR_VERSION = 0,
+  MINOR_VERSION_BYTES = 4,
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
