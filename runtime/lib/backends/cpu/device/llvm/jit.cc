@@ -440,14 +440,12 @@ common::Status processBrtFile(const std::string &path,
     return common::Status::OK();
   }
 
-  printf("Find magic number.\n");
   // Check major number.
   std::string tmpFilePath = path + ".tmp";
   int64_t majorVersionData = 0;
   std::memcpy(&majorVersionData, bufferData + MAGIC_NUMBER_BYTES,
               MAJOR_VERSION_BYTES);
   if (majorVersionData < MAJOR_VERSION) {
-    printf("Find valid major version number.\n");
     if (cleanBrtFile(brtFile, tmpFilePath)) {
       newFilePath = tmpFilePath;
     }
@@ -464,7 +462,6 @@ common::Status processBrtFile(const std::string &path,
               bufferData + MAGIC_NUMBER_BYTES + MAJOR_VERSION_BYTES,
               MINOR_VERSION_BYTES);
   if (minorVersionData <= MINOR_VERSION) {
-    printf("Find valid major version number.\n");
     if (cleanBrtFile(brtFile, tmpFilePath)) {
       newFilePath = tmpFilePath;
     }
